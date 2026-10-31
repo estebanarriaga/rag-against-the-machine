@@ -25,10 +25,10 @@ class Indexer():
     
     Docs in RecursiveCharacterTextSplitter(): https://docs.langchain.com/oss/python/langchain/knowledge-base
     """
-    def __init__(self, directory_path: str, max_chunk_size) -> None:
+    def __init__(self, directory_path: str, max_chunk_size: int, interface: BestMatchingInterface) -> None:
         self.directory_path = directory_path
         self.chunk_size = max_chunk_size
-        self.bm_interface = BestMatchingInterface()
+        self.bm_interface = interface
 
     def create_index(self):
         """Point 1, 2 and 3"""
@@ -36,17 +36,21 @@ class Indexer():
             print("initialize the Indexer")
         
         file_content = self._get_file_content()
-        splitter = RecursiveCharacterTextSplitter(chunk_size=self.chunk_size)
+        if not 1 <= self.chunk_size <= 2000:
+            raise ValueError("max_chunk_size must be between 1 and 2000 characters.")
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=self.chunk_size,
+            chunk_overlap=min(200, self.chunk_size // 5),
+            add_start_index=True,
+        )
         # in this step we can use the stemmer
         corpus = splitter.split_documents(file_content)
-        bm = BestMatchingInterface()
+        for document in corpus:
+            start = document.metadata.pop("start_index")
+            document.metadata["first_character_index"] = start
+            document.metadata["last_character_index"] = start + len(document.page_content)
+        bm = self.bm_interface
         bm.build_index(corpus)
-
-        for result in bm.search("How does caching work?", k=5):
-            print(result.score)
-            print(result.document.page_content)
-            print(result.document.metadata)
-
 
     def _get_file_content(self) -> list[Document]:
         # validate it is a valid directory
