@@ -1,4 +1,4 @@
-from bm_interface import BestMatchingInterface, SearchResult
+from .bm_index import BestMatchingInterface, SearchResult
 
 class Retriever():
     """

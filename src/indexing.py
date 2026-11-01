@@ -2,8 +2,10 @@
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 import os
-from path import Path
-from bm_interface import BestMatchingInterface
+from pathlib import Path
+
+from .bm_index import BestMatchingInterface
+from . import PROJECT_ROOT
 
 class Indexer():
     """ This class is in charge of:
@@ -25,7 +27,7 @@ class Indexer():
     
     Docs in RecursiveCharacterTextSplitter(): https://docs.langchain.com/oss/python/langchain/knowledge-base
     """
-    def __init__(self, directory_path: str, max_chunk_size: int, interface: BestMatchingInterface) -> None:
+    def __init__(self, directory_path: str | Path, max_chunk_size: int, interface: BestMatchingInterface) -> None:
         self.directory_path = directory_path
         self.chunk_size = max_chunk_size
         self.bm_interface = interface
@@ -59,12 +61,16 @@ class Indexer():
         for root, dirs, files in os.walk(self.directory_path):
             for file in files:
                 if file.endswith((".py", ".md")):
-                    file_path = root + os.sep + file
+                    file_path = (Path(root) / file).resolve()
+                    try:
+                        source_path = file_path.relative_to(PROJECT_ROOT)
+                    except ValueError:
+                        source_path = file_path
                     file_content.append(
                         Document(
                             page_content=Path(file_path).read_text(),
                             metadata={
-                                "file_path": file_path,
+                                "file_path": source_path.as_posix(),
                             }))
 
         return file_content

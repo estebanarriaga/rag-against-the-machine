@@ -1,12 +1,13 @@
 
 import fire # type: ignore[import-untyped]
-import dspy # type: ignore[import-untyped]
 import json
 
 from pathlib import Path
-from index_module import Indexer
-from retriever_module import Retriever
-from bm_interface import BestMatchingInterface
+from .indexing import Indexer
+from .retrieve import Retriever
+from .generation import Generator
+from .bm_index import BestMatchingInterface
+from . import CORPUS_PATH, PROJECT_ROOT
 
 
 class RAG:
@@ -21,24 +22,16 @@ class RAG:
             self._interface = BestMatchingInterface()
         return self._interface
 
-    def configure_lm(self):
-        lm = dspy.LM(
-            model="openai/qwen3:0.6b",
-            api_base="http://localhost:11434/v1",
-            api_key="EMPTY",
-            temperature=0.3,
-            max_tokens=2048,
-        )
-        dspy.configure(lm=lm)
 
     def index(self, max_chunk_size: int):
         """Create the document index."""
         indexer = Indexer(
-            "./vllm-0.10.1",
+            CORPUS_PATH,
             max_chunk_size=max_chunk_size,
             interface=self.interface,
         )
         indexer.create_index()
+        print("Ingestion complete! Indices saved under data/processed/")
 
     def search(self, query: str, k: int = 5):
         """Search indexed documents."""
@@ -73,9 +66,10 @@ class RAG:
                 question["question"], k
             ):
                 metadata = result.document.metadata.copy()
-                metadata["file_path"] = str(
-                    Path("data/raw") / metadata["file_path"]
-                )
+                source_path = Path(metadata["file_path"])
+                if source_path.is_absolute():
+                    source_path = source_path.relative_to(PROJECT_ROOT)
+                metadata["file_path"] = source_path.as_posix()
                 sources.append(metadata)
 
             results.append({
@@ -89,7 +83,7 @@ class RAG:
         )
 
         output_file = (
-            output_directory / "datasets_docs_public.json"
+            output_directory / dataset_file.name
         )
 
         output_file.write_text(
@@ -101,9 +95,8 @@ class RAG:
 
     def answer(self, query: str, k: int = 5):
         """Generate an answer for a query."""
-        self.configure_lm()
-        print("Query:", query)
-        print("Top-k:", k)
+        resuts = self.search(query=query, k=k)
+        response = Generator().generate(query=query, sources=resuts)
 
     def answer_dataset(
         self,
@@ -111,7 +104,6 @@ class RAG:
         save_directory: str,
     ):
         """Generate answers for a dataset."""
-        self.configure_lm()
         print("Results:", student_search_results_path)
         print("Save to:", save_directory)
 

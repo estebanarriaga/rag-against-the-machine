@@ -6,13 +6,12 @@ from pathlib import Path
 import re
 from typing import Sequence
 
-import bm25s
+import bm25s # type: ignore[import-untyped]
 from langchain_core.documents import Document
+from . import INDEX_PATH
 
 
-DEFAULT_INDEX_PATH = Path(__file__).resolve().parent / "data" / "processed"
-
-
+# This should be a Pydantic model according to subject requirements
 @dataclass(frozen=True)
 class SearchResult:
     """A ranked corpus chunk and its BM25 score."""
@@ -32,7 +31,7 @@ class BestMatchingInterface:
         self,
         k1: float = 1.5,
         b: float = 0.75,
-        index_path: str | Path = DEFAULT_INDEX_PATH,
+        index_path: str | Path = INDEX_PATH,
         expand_identifiers: bool = True,
     ) -> None:
         self.index_path = Path(index_path)
@@ -109,13 +108,22 @@ class BestMatchingInterface:
         if not corpus_file.is_file():
             raise RuntimeError("Missing index file. Run the index command first.")
         try:
-            self.retriever = self.retriever.load(
+            settings = json.loads(
+                (self.index_path / "tokenization.json").read_text(encoding="utf-8")
+            )
+            expand_identifiers = settings["expand_identifiers"]
+            if not isinstance(expand_identifiers, bool):
+                raise ValueError("expand_identifiers must be a boolean.")
+            retriever = bm25s.BM25.load(
                 str(self.index_path),
                 load_corpus=True,
                 show_progress=False
             )
-            
+            if not retriever.corpus or len(retriever.corpus) != retriever.scores["num_docs"]:
+                raise ValueError("Saved corpus size does not match the index.")
         except Exception as error:
             raise RuntimeError(
                 f"Cannot load index from {self.index_path}: {error}. Run the index command to rebuild it."
             ) from error
+        self.retriever = retriever
+        self.expand_identifiers = expand_identifiers
