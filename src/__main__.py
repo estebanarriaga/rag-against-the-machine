@@ -8,6 +8,7 @@ from .retrieve import Retriever
 from .generation import Generator
 from .bm_index import BestMatchingInterface
 from . import CORPUS_PATH, PROJECT_ROOT
+from .models import MinimalSearchResults, MinimalSource
 
 
 class RAG:
@@ -95,8 +96,17 @@ class RAG:
 
     def answer(self, query: str, k: int = 5):
         """Generate an answer for a query."""
-        resuts = self.search(query=query, k=k)
-        response = Generator().generate(query=query, sources=resuts)
+        retrieved = Retriever(interface=self.interface).search(query=query, k=k)
+        sources = MinimalSearchResults(
+            question=query,
+            retrieved_sources=[
+                MinimalSource(**result.document.metadata)
+                for result in retrieved
+            ],
+        )
+        response = Generator().generate(query=query, sources=sources)
+        print(response.answer)
+        return response
 
     def answer_dataset(
         self,
