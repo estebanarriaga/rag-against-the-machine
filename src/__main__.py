@@ -11,7 +11,10 @@ from src.logger import setup_logging
 from .indexing import Indexer
 from .retrieve import Retriever
 from .generation import Generator
+from .evaluation import Evaluator
 from .bm_index import BestMatchingInterface
+from .models import MinimalSearchResults, MinimalSource
+import uuid
 from . import CORPUS_PATH, PROJECT_ROOT
 
 
@@ -48,7 +51,7 @@ class RAG:
 
         for result in results:
             print(result.score, result.document.metadata)
-            print(result.document.page_content)
+            # print(result.document.page_content)
 
     def search_dataset(
         self,
@@ -103,8 +106,17 @@ class RAG:
 
     def answer(self, query: str, k: int = 5):
         """Generate an answer for a query."""
-        resuts = self.search(query=query, k=k)
-        response = Generator().generate(query=query, sources=resuts)
+        retrieved = Retriever(interface=self.interface).search(query=query, k=k)
+        sources = MinimalSearchResults(
+            question_id=str(uuid.uuid4()),
+            question=query,
+            retrieved_sources=[
+                MinimalSource(**result.document.metadata)
+                for result in retrieved
+            ],
+        )
+        response = Generator().generate(query=query, sources=sources)
+        print(response.answer)
 
     def answer_dataset(
         self,

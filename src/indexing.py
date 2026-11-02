@@ -3,9 +3,14 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 import os
 from pathlib import Path
+import logging
 
 from .bm_index import BestMatchingInterface
 from . import PROJECT_ROOT
+
+
+logger = logging.getLogger("Indexer")
+
 
 class Indexer():
     """ This class is in charge of:
@@ -40,6 +45,7 @@ class Indexer():
         file_content = self._get_file_content()
         if not 1 <= self.chunk_size <= 2000:
             raise ValueError("max_chunk_size must be between 1 and 2000 characters.")
+        logger.info(f"Creating index with chunk size: {self.chunk_size} characters.")
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.chunk_size,
             chunk_overlap=min(200, self.chunk_size // 5),
@@ -47,8 +53,9 @@ class Indexer():
         )
         # in this step we can use the stemmer
         corpus = splitter.split_documents(file_content)
+        logger.debug(f"Corpus created with {len(corpus)} chunks.")
         for document in corpus:
-            start = document.metadata.pop("start_index")
+            start = document.metadata.pop("start_index") # This should be the MinimalSource model
             document.metadata["first_character_index"] = start
             document.metadata["last_character_index"] = start + len(document.page_content)
         bm = self.bm_interface
@@ -56,6 +63,7 @@ class Indexer():
 
     def _get_file_content(self) -> list[Document]:
         # validate it is a valid directory
+        # We could use a filemanager here. But ok for now
         
         file_content: list[Document] = []
         for root, dirs, files in os.walk(self.directory_path):
