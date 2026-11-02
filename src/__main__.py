@@ -1,8 +1,13 @@
 
+import logging
+import sys
+
 import fire # type: ignore[import-untyped]
 import json
 
 from pathlib import Path
+
+from src.logger import setup_logging
 from .indexing import Indexer
 from .retrieve import Retriever
 from .generation import Generator
@@ -13,8 +18,11 @@ from . import CORPUS_PATH, PROJECT_ROOT
 class RAG:
     """RAG command-line interface."""
 
-    def __init__(self):
+    def __init__(self, debug: bool = False):
         self._interface = None
+        
+        self.logger = logging.getLogger("RAG")
+        setup_logging(debug=debug)
 
     @property
     def interface(self):
@@ -118,4 +126,9 @@ class RAG:
 
 
 if __name__ == "__main__":
-    fire.Fire(RAG)
+    arguments = sys.argv[1:]
+    debug = any(argument in ("-debug", "--debug") for argument in arguments)
+    arguments = [argument for argument in arguments if argument not in ("-debug", "--debug")]
+
+    rag = RAG(debug=debug)
+    fire.Fire(rag, command=arguments)
