@@ -121,8 +121,8 @@ class RAG:
         dataset_path: str,
     ):
         """Evaluate retrieval results."""
-        print("Results:", student_search_results_path)
-        print("Dataset:", dataset_path)
+        evaluator = Evaluator()
+        evaluator.evaluate(student_search_results_path, dataset_path)
 
 
 if __name__ == "__main__":
