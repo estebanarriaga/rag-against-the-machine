@@ -32,10 +32,8 @@ class BestMatchingInterface:
         k1: float = 1.5,
         b: float = 0.75,
         index_path: str | Path = INDEX_PATH,
-        expand_identifiers: bool = True,
     ) -> None:
         self.index_path = Path(index_path)
-        self.expand_identifiers = expand_identifiers
         self.retriever = bm25s.BM25(k1=k1, b=b)
 
     def tokenize(self, texts: str | Sequence[str] | Sequence[Document]) -> bm25s.tokenization.Tokenized:
@@ -50,10 +48,18 @@ class BestMatchingInterface:
                 text = filename + "\n" + item.page_content
             else:
                 text = item
-            if self.expand_identifiers:
-                # Preserve exact identifiers and add words for natural-language queries.
-                words = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text).replace("_", " ")
-                text += "\n" + words
+
+
+            # Preserve exact identifiers and add words for natural-language queries.
+            # I would like this in its own class, to expand identifiers, and textual surgery
+            # And there we will also use a stemmer for markdown files or python files, but
+            # depending on the place: comments, context, etc. Same with markdown
+            words = re.sub(
+                r"([a-z0-9])([A-Z])",
+                r"\1 \2",
+                text
+                ).replace("_", " ")
+            text += "\n" + words
             content.append(text)
         return bm25s.tokenize(content, stopwords="en", show_progress=False)
 
@@ -78,10 +84,11 @@ class BestMatchingInterface:
         if self.retriever.corpus is None:
             raise RuntimeError("No in-memory index to save. Build or load an index first.")
         destination = Path(path) if path is not None else self.index_path
-        self.retriever.save(str(destination), show_progress=False)
-        (destination / "tokenization.json").write_text(
-            json.dumps({"expand_identifiers": self.expand_identifiers}) + "\n"
-        )
+        logger.info(f"Saving index and corpus to {destination}")
+        self.retriever.save(
+            str(destination),
+            show_progress=False
+            )
         return destination
 
     def search(self, query: str, k: int = 10) -> list[SearchResult]:
@@ -107,13 +114,9 @@ class BestMatchingInterface:
         corpus_file = self.index_path / "corpus.jsonl"
         if not corpus_file.is_file():
             raise RuntimeError("Missing index file. Run the index command first.")
+        
+        
         try:
-            settings = json.loads(
-                (self.index_path / "tokenization.json").read_text(encoding="utf-8")
-            )
-            expand_identifiers = settings["expand_identifiers"]
-            if not isinstance(expand_identifiers, bool):
-                raise ValueError("expand_identifiers must be a boolean.")
             retriever = bm25s.BM25.load(
                 str(self.index_path),
                 load_corpus=True,
@@ -126,4 +129,3 @@ class BestMatchingInterface:
                 f"Cannot load index from {self.index_path}: {error}. Run the index command to rebuild it."
             ) from error
         self.retriever = retriever
-        self.expand_identifiers = expand_identifiers
