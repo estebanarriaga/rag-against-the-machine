@@ -1,0 +1,45 @@
+ill crash
+
+  1. answer_dataset (rag.py:179-184). After the loop, result["search_results"] and result["k"]
+     read the last question, not the whole file, so you get a KeyError. It also never writes
+     anything to save_directory. You need to keep the parsed file in its own variable, then write
+     a StudentSearchResultsAndAnswer with model_dump_json. It also still uses raw json.loads +
+     dicts; StudentSearchResults.model_validate_json would give you typed objects, as
+     search_dataset does now.
+  2. index --method hybrid (rag.py:96). HybridRetriever has no build_index, so you get an
+     AttributeError. That means the indexes for hybrid have to be built in two runs (bm25, then
+     dense), and both runs must use the same max_chunk_size. Otherwise the chunk_ids don't match
+     and the fusion never lines up. The docstring says "Create the BM25 and Chroma indexes from
+     the same chunks", but the code doesn't do that.
+  3. The defaults are inconsistent. search defaults to bm25, but search_dataset and answer default
+     to hybrid, so they fail until Chroma is indexed. Your todo says bm25 should be the default.
+  4. An empty Chroma collection gives a TypeError (n_results=0), which is what you have right now.
+     The fix is the count() == 0 guard I offered earlier.
+
+  Will hide errors
+
+  6. index and search catch Exception and only log it. index then prints "Ingestion complete!"
+     even when it failed, and the exit code is 0 either way.
+
+  Runs, but not as intended
+
+  7. Context is built but nothing reads it. get_retriever, BestMatchingInterface (k1=1.5 rather
+     than your 2.0), HybridRetriever (equal weights instead of your RRF weights), ChromaInterface
+     and Generator all use their own hard-coded defaults. Indexer stores config and never uses it.
+  8. Generator hard-codes its LLM settings, including max_tokens=128. With qwen3's thinking
+     output, that's likely to cut answers off or make DSPy fail to parse them. Your
+     Context.max_tokens=2048 is ignored.
+  9. Bugs in Generator:
+     - generate_in_batch uses undefined names queries and sources_list. It's unused for now, but
+       it's the obvious fix for the "answer_dataset crashes the computer" note in your todo.
+     - if len(context) > QWEN_... compares the number of sources, not context_length, so the
+       warning never fires.
+     - context[-1] raises an IndexError when there are 0 sources.
+  10. max_chunk_size isn't validated anymore. The 1–2000 check is commented out and IndexerParams
+      is unused.
+  11. Removing the variables in __init__.py will break imports right now. base, bm_interface,
+      chroma_interface, indexing and generation still import PROJECT_ROOT, INDEX_PATH or
+      CORPUS_PATH. Also, Context.chromadb_path and processed_chunks_path point to
+      data/processed/chunks/..., which doesn't exist on disk.
+  12. All Context paths are relative to the current folder. That's fine via make run, but the path
+      validation fails if you run from anywhere else.

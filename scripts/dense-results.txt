@@ -1,0 +1,21 @@
+RAG_CMD="uv run --python 3.12 python -m src" bash scripts/test_pipeline.sh dense
+
+=================== dense ===================
++ uv run --python 3.12 python -m src index 2000 --method dense
+Ingestion complete! Indices saved under data/processed/
++ uv run --python 3.12 python -m src search_dataset data/datasets/public/UnansweredQuestions/dataset_code_public.json data/output/search_results/dense --k 10 --method dense
+--- [dense] dataset_code_public.json
++ uv run --python 3.12 python -m src evaluate data/output/search_results/dense/dataset_code_public.json data/datasets/public/AnsweredQuestions/dataset_code_public.json
+Recall@1: 19.19%
+Recall@3: 31.31%
+Recall@5: 38.38%
+Recall@10: 47.47%
++ uv run --python 3.12 python -m src search_dataset data/datasets/public/UnansweredQuestions/dataset_docs_public.json data/output/search_results/dense --k 10 --method dense
+--- [dense] dataset_docs_public.json
++ uv run --python 3.12 python -m src evaluate data/output/search_results/dense/dataset_docs_public.json data/datasets/public/AnsweredQuestions/dataset_docs_public.json
+Recall@1: 38.00%
+Recall@3: 56.00%
+Recall@5: 65.00%
+Recall@10: 70.00%
+
+Pipeline OK for: dense

@@ -1,15 +1,31 @@
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
 from langchain_core.documents import Document
-import os
 from pathlib import Path
 import logging
+from typing import Any, Sequence
+from pydantic import BaseModel, Field
 
-from .bm_index import BestMatchingInterface
+from src.context import Context
+
+from .bm_interface import BestMatchingInterface
+from .chroma_interface import ChromaInterface
+from .base import Retriever
+from .models import FileType, chunk_id
 from . import PROJECT_ROOT
 
 
 logger = logging.getLogger("Indexer")
+
+
+class IndexerParams(BaseModel):
+    """
+    Validates that the parameters passed to the Indexer class are correct.
+    This is a Pydantic model that will be used to validate the parameters passed to the Indexer class.
+    """
+    
+    corpus_path: str | Path
+    max_chunk_size: int = Field(..., ge=1, le=2000, description="Maximum chunk size in characters (1-2000).")
 
 
 class Indexer():
@@ -29,60 +45,112 @@ class Indexer():
     > Note: bm25s should be its own class/interface, since it sits in between the indexing and the retrieval:
     > we use it to create the index, and then to search and anwser. In this class only index corpus generation
     > will be used.
-    
+
     Docs in RecursiveCharacterTextSplitter(): https://docs.langchain.com/oss/python/langchain/knowledge-base
+    lang_chain Document: contains page_content and metadata. Metadata is not used in index
     """
-    def __init__(self, directory_path: str | Path, max_chunk_size: int, interface: BestMatchingInterface) -> None:
-        self.directory_path = directory_path
+    FILES_TYPES: dict[FileType, set[str]] = {
+        FileType.CODE: {'.py'},
+        FileType.DOCS: {'.md', '.txt'},
+    }
+
+    files_splitter = dict[str, RecursiveCharacterTextSplitter]
+
+
+    def __init__(self,
+        corpus_path: str | Path,
+        max_chunk_size: int,
+        config: Context,
+        interface: Retriever
+    ) -> None:
+        self.corpus_path = corpus_path
         self.chunk_size = max_chunk_size
-        self.bm_interface = interface
+        self.config = config
+        self.interface = interface
+
 
     def create_index(self):
         """Point 1, 2 and 3"""
-        if not self:
-            print("initialize the Indexer")
-        
+
         file_content = self._get_file_content()
-        if not 1 <= self.chunk_size <= 2000:
-            raise ValueError("max_chunk_size must be between 1 and 2000 characters.")
+        corpus = self._split_documents(file_content)
+
         logger.info(f"Creating index with chunk size: {self.chunk_size} characters.")
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.chunk_size,
-            chunk_overlap=min(200, self.chunk_size // 5),
-            add_start_index=True,
-        )
-        # in this step we can use the stemmer
-        corpus = splitter.split_documents(file_content)
         logger.debug(f"Corpus created with {len(corpus)} chunks.")
+
         for document in corpus:
             start = document.metadata.pop("start_index") # This should be the MinimalSource model
             document.metadata["first_character_index"] = start
             document.metadata["last_character_index"] = start + len(document.page_content)
-        bm = self.bm_interface
-        bm.build_index(corpus)
+            # Same ID in every index, so their rankings can be fused later (RRF).
+            document.metadata["chunk_id"] = chunk_id(
+                document.metadata["file_path"],
+                document.metadata["first_character_index"],
+                document.metadata["last_character_index"],
+            )
+        # Every index is built from the exact same corpus, so they stay in sync.
+        logger.info(f"Building {self.interface.name} index...")
+        self.interface.build_index(corpus)
+
 
     def _get_file_content(self) -> list[Document]:
-        # validate it is a valid directory
-        # We could use a filemanager here. But ok for now
+        """Load every code and docs file under corpus_path as one Document each.
+
+        file_path is stored relative to PROJECT_ROOT when possible, so sources
+        stay valid if the project moves. Unreadable files are skipped with a warning.
+        """
+        code_suffixes = self.FILES_TYPES[FileType.CODE]
+        allowed_suffixes = code_suffixes | self.FILES_TYPES[FileType.DOCS]
+
+        documents: list[Document] = []
+        for file_path in sorted(Path(self.corpus_path).resolve().rglob("*")):
+            if not file_path.is_file() or file_path.suffix not in allowed_suffixes:
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as error:
+                logger.warning(f"Skipping {file_path}: {error}")
+                continue
+
+            source_path = (
+                file_path.relative_to(PROJECT_ROOT)
+                if file_path.is_relative_to(PROJECT_ROOT)
+                else file_path
+            )
+            language = Language.PYTHON if file_path.suffix in code_suffixes else Language.MARKDOWN
+            documents.append(Document(
+                page_content=content,
+                metadata={"file_path": source_path.as_posix(), "file_type": language.value},
+            ))
+
+        logger.debug(f"Loaded {len(documents)} files from {self.corpus_path}.")
+        return documents
+
+
+    def _split_documents(self, documents: list[Document]) -> list[Document]:
+        """Split each document with the splitter for its language (metadata["file_type"]).
+
+        from_language() swaps the default separators for language-aware ones:
+        Python splits on class/def boundaries first, Markdown on headings.
+        One splitter is built per language and reused for every file.
+        """
+        splitters: dict[str, RecursiveCharacterTextSplitter] = {}
+        chunks: list[Document] = []
+        for document in documents:
+            language = document.metadata["file_type"]
+            if language not in splitters:
+                splitters[language] = RecursiveCharacterTextSplitter.from_language(
+                    Language(language),
+                    chunk_size=self.chunk_size,
+                    chunk_overlap=min(200, self.chunk_size // 5),
+                    add_start_index=True,
+                )
+            chunks.extend(splitters[language].split_documents([document]))
+        return chunks
+
+    def cache(self) -> Any:
+        """
+        Cache the index results when the query is the same.
+        """
         
-        file_content: list[Document] = []
-        for root, dirs, files in os.walk(self.directory_path):
-            for file in files:
-                if file.endswith((".py", ".md")):
-                    file_path = (Path(root) / file).resolve()
-                    try:
-                        source_path = file_path.relative_to(PROJECT_ROOT)
-                    except ValueError:
-                        source_path = file_path
-                    file_content.append(
-                        Document(
-                            page_content=Path(file_path).read_text(),
-                            metadata={
-                                "file_path": source_path.as_posix(),
-                            }))
-
-        return file_content
-
-    # def _split_documents(self):
-    #     for document in self.documents
-    #     text_splitter = RecursiveCharacterTextSplitter()
+        return NotImplementedError

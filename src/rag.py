@@ -23,7 +23,7 @@ class RAG:
     """RAG command-line interface."""
 
     def __init__(self,
-        debug: bool = False,
+        debug: bool = True,
         verbose: bool = False,
         model_name: str = 'openai/qwen3:0.6b',
         # model_name: str = 'openai/Qwen/Qwen3-0.6B',

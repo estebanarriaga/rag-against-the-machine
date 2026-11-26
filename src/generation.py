@@ -46,7 +46,8 @@ class Generator():
             api_base="http://localhost:11434/v1",
             api_key="EMPTY",
             temperature=0.3,
-            max_tokens=2048,
+            max_tokens=128,
+            cache=True,
         )
         dspy.configure(lm=lm)
         self.lm = lm
@@ -89,6 +90,22 @@ class Generator():
             sources=sources.retrieved_sources,
             answer=answer,
         )
+
+
+    def generate_in_batch(self, data: list[MinimalSearchResults]) -> list[AnsweredQuestion]:
+        """
+        Generate answers for a batch of queries and their corresponding sources.
+        """
+        total_queries = len(data)
+        logger.info(f"Generating answers for {total_queries} queries in batch.")
+
+        answered_questions = []
+        for query, sources in zip(queries, sources_list):
+            answered_question = self.generate(query, sources)
+            answered_questions.append(answered_question)
+
+        return answered_questions
+
 
     def _augment(self, sources: MinimalSearchResults) -> str:
         """Resolve retrieved source references into grounded context."""

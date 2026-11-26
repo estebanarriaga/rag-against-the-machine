@@ -4,16 +4,24 @@ TMP_PROJECT_DIR ?= /tmp/$(USER)-rag
 UV_PROJECT_ENVIRONMENT ?= $(TMP_PROJECT_DIR)/venv
 UV_CACHE_DIR ?= $(TMP_PROJECT_DIR)/uv-cache
 TMPDIR ?= /tmp
+OLLAMA_ROOT ?= /goinfre/$(USER)/ollama
+OLLAMA_MODEL ?= qwen3:0.6b
 
 export UV_PROJECT_ENVIRONMENT UV_CACHE_DIR TMPDIR
 
-.PHONY: install run debug clean lint lint-strict
+.PHONY: install run debug clean lint lint-strict ollama test-pipeline
 
 install:
 	$(UV) sync --dev --python $(PYTHON_VERSION)
 
+ollama:
+	OLLAMA_ROOT="$(OLLAMA_ROOT)" OLLAMA_MODEL="$(OLLAMA_MODEL)" bash scripts/ollama.sh
+
 run:
 	$(UV) run --python $(PYTHON_VERSION) python -m src
+
+test-pipeline:
+	RAG_CMD="$(UV) run --python $(PYTHON_VERSION) python -m src" bash scripts/test_pipeline.sh $(METHODS)
 
 debug:
 	$(UV) run --python $(PYTHON_VERSION) python -m pdb -m src

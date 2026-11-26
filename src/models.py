@@ -1,3 +1,6 @@
+from enum import Enum
+
+from langchain_core.documents import Document
 from pydantic import BaseModel, Field
 import uuid
 from typing import List
@@ -41,3 +44,30 @@ class StudentSearchResults(BaseModel):
 class StudentSearchResultsAndAnswer(BaseModel):
     search_results: List[MinimalAnswer]
     k: int
+
+class FileType(Enum):
+    CODE = 'code'
+    DOCS = 'docs'
+    ALL = 'all'
+
+
+class RetrievalMethod(Enum):
+    """Which ranking the CLI uses: lexical, semantic, or both fused with RRF."""
+    BM25 = 'bm25'
+    DENSE = 'dense'
+    HYBRID = 'hybrid'
+
+
+class SearchResult(BaseModel):
+    """A ranked corpus chunk and its score.
+
+    The score scale depends on the retriever (BM25 score, cosine similarity,
+    or RRF score), so only compare scores coming from the same retriever.
+    """
+    document: Document
+    score: float
+
+
+def chunk_id(file_path: str, first_character_index: int, last_character_index: int) -> str:
+    """Stable chunk ID shared by every index: the same chunk always gets the same ID."""
+    return f"{file_path}:{first_character_index}:{last_character_index}"

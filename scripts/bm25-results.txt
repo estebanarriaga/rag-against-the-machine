@@ -1,0 +1,21 @@
+RAG_CMD="uv run --python 3.12 python -m src" bash scripts/test_pipeline.sh bm25
+
+=================== bm25 ===================
++ uv run --python 3.12 python -m src index 2000 --method bm25
+Ingestion complete! Indices saved under data/processed/
++ uv run --python 3.12 python -m src search_dataset data/datasets/public/UnansweredQuestions/dataset_code_public.json data/output/search_results/bm25 --k 10 --method bm25
+--- [bm25] dataset_code_public.json
++ uv run --python 3.12 python -m src evaluate data/output/search_results/bm25/dataset_code_public.json data/datasets/public/AnsweredQuestions/dataset_code_public.json
+Recall@1: 46.46%
+Recall@3: 67.68%
+Recall@5: 73.74%
+Recall@10: 79.80%
++ uv run --python 3.12 python -m src search_dataset data/datasets/public/UnansweredQuestions/dataset_docs_public.json data/output/search_results/bm25 --k 10 --method bm25
+--- [bm25] dataset_docs_public.json
++ uv run --python 3.12 python -m src evaluate data/output/search_results/bm25/dataset_docs_public.json data/datasets/public/AnsweredQuestions/dataset_docs_public.json
+Recall@1: 60.00%
+Recall@3: 81.00%
+Recall@5: 84.00%
+Recall@10: 88.00%
+
+Pipeline OK for: bm25

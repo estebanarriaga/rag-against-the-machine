@@ -1,0 +1,36 @@
+ Partly, but I doubt that's the main reason. Two things probably matter more than missing transformations. I haven't checked any
+  of this against your actual numbers.
+
+  1. Chunks are probably being cut off before they're embedded. Chroma's default embedding model is all-MiniLM-L6-v2, and Chroma
+  truncates its input to 256 tokens. Code splits into many tokens (identifiers, symbols, indentation), so a 2000-character chunk
+  is roughly 500–800 tokens. If that's right, only the first third or so of most chunks ends up in the vector, while BM25 indexes
+  every token. I'd check this first: it's cheap to measure, and the fix is easy (smaller chunks for dense, or a model that
+  accepts longer input).
+
+  2. The model doesn't fit the task. MiniLM is a small general model trained on English sentence pairs, not code. Your questions
+  name exact identifiers (FP8_MIN, triton_flash_attention, "fused batched MoE"). BM25 is very good at that kind of exact match,
+  and a small sentence model blurs those names into general meaning. BM25 beating dense on code questions is a known result;
+  dense usually catches up on paraphrased, conceptual questions.
+
+  Where transformations would help:
+  - Contextual headers on chunks (file path, module, enclosing class/function added before embedding). This is the best fit for
+    dense: a chunk from the middle of a function otherwise has no idea what it belongs to. It's a cheap first experiment.
+  - HyDE / query rewriting. It closes the gap between a question and code by embedding a hypothetical answer, or code, instead of
+    the question. It helps, but it costs an LLM call per query.
+  - Identifier splitting (camelCase/snake_case). This mostly helps BM25; it matters less for dense, which has its own subword
+    tokenizer.
+
+  What I'd do, in order:
+  1. Measure how many chunks go over 256 tokens. Then re-run dense with max_chunk_size around 600–800 and see how much recall
+     comes back.
+  2. Compare dense against BM25 on the docs dataset separately from code. If dense is close on docs but far behind on code, the
+     model is the problem, not missing transformations.
+  3. Try a stronger or code-aware embedding model. Since you already run Ollama, nomic-embed-text (8k context) is an easy switch
+     through a custom Chroma embedding function.
+  4. Then add contextual headers, then HyDE.
+
+  Also, a dense retriever that's weaker on its own can still help hybrid. If hybrid beats BM25, dense is finding things BM25
+  misses, even if it looks bad alone.
+
+  I can run step 1 now; it only reads the corpus and doesn't touch your indexes.
+
